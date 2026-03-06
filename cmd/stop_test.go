@@ -23,6 +23,9 @@ func (f stopRunnerFunc) Run(ctx context.Context, name string, args ...string) (d
 
 func TestStopRunning(t *testing.T) {
 	projectDir := t.TempDir()
+	if err := writeDefaultDevcontainerJSON(projectDir); err != nil {
+		t.Fatalf("writeDefaultDevcontainerJSON() error = %v", err)
+	}
 	originalDir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd() error = %v", err)
@@ -89,7 +92,7 @@ func TestStopRunning(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
-	want := "Stopped container for " + filepath.Base(projectRoot) + ": " + containerID + "\n"
+	want := "Stopped container for " + filepath.Base(projectRoot) + " (default): " + containerID + "\n"
 	if out.String() != want {
 		t.Fatalf("output = %q, want %q", out.String(), want)
 	}
@@ -97,6 +100,9 @@ func TestStopRunning(t *testing.T) {
 
 func TestStopMissing(t *testing.T) {
 	projectDir := t.TempDir()
+	if err := writeDefaultDevcontainerJSON(projectDir); err != nil {
+		t.Fatalf("writeDefaultDevcontainerJSON() error = %v", err)
+	}
 	originalDir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd() error = %v", err)
@@ -144,7 +150,7 @@ func TestStopMissing(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
-	want := "Container missing for " + filepath.Base(projectRoot) + ": missing\n"
+	want := "Container missing for " + filepath.Base(projectRoot) + " (default): missing\n"
 	if out.String() != want {
 		t.Fatalf("output = %q, want %q", out.String(), want)
 	}
@@ -152,6 +158,9 @@ func TestStopMissing(t *testing.T) {
 
 func TestStopStopped(t *testing.T) {
 	projectDir := t.TempDir()
+	if err := writeDefaultDevcontainerJSON(projectDir); err != nil {
+		t.Fatalf("writeDefaultDevcontainerJSON() error = %v", err)
+	}
 	originalDir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd() error = %v", err)
@@ -188,7 +197,7 @@ func TestStopStopped(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
-	want := "Container already stopped for " + filepath.Base(projectRoot) + ": " + containerID + "\n"
+	want := "Container already stopped for " + filepath.Base(projectRoot) + " (default): " + containerID + "\n"
 	if out.String() != want {
 		t.Fatalf("output = %q, want %q", out.String(), want)
 	}
@@ -196,6 +205,9 @@ func TestStopStopped(t *testing.T) {
 
 func TestStopStopError(t *testing.T) {
 	projectDir := t.TempDir()
+	if err := writeDefaultDevcontainerJSON(projectDir); err != nil {
+		t.Fatalf("writeDefaultDevcontainerJSON() error = %v", err)
+	}
 	originalDir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd() error = %v", err)
@@ -239,5 +251,102 @@ func TestStopStopError(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "stderr: nope") {
 		t.Fatalf("output = %q, want stderr", out.String())
+	}
+}
+
+func TestStopWithoutDefaultRequiresTag(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectDir, ".devcontainer", "frontend"), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, ".devcontainer", "frontend", "devcontainer.json"), []byte(`{"name":"frontend"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	restoreRunner := cmd.SetStopRunner(stopRunnerFunc(func(ctx context.Context, name string, args ...string) (docker.Result, error) {
+		t.Fatalf("runner should not be called")
+		return docker.Result{}, nil
+	}))
+	t.Cleanup(restoreRunner)
+
+	var out bytes.Buffer
+	restoreWriter := cmd.SetStopWriter(&out)
+	t.Cleanup(restoreWriter)
+
+	originalArgs := os.Args
+	t.Cleanup(func() {
+		os.Args = originalArgs
+	})
+	os.Args = []string{"codeagent", "stop"}
+
+	err = cmd.Execute()
+	if err == nil {
+		t.Fatalf("Execute() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "Use --tag") {
+		t.Fatalf("Execute() error = %q, want missing default guidance", err.Error())
+	}
+}
+
+func TestStopWithTag(t *testing.T) {
+	projectDir := t.TempDir()
+	tagDir := filepath.Join(projectDir, ".devcontainer", "frontend")
+	if err := os.MkdirAll(tagDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tagDir, "devcontainer.json"), []byte(`{"name":"frontend"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	step := 0
+	restoreRunner := cmd.SetStopRunner(stopRunnerFunc(func(ctx context.Context, name string, args ...string) (docker.Result, error) {
+		step++
+		switch step {
+		case 1:
+			return docker.Result{Stdout: "abc123\texited\n"}, nil
+		default:
+			t.Fatalf("runner called too many times: %d", step)
+			return docker.Result{}, nil
+		}
+	}))
+	t.Cleanup(restoreRunner)
+
+	var out bytes.Buffer
+	restoreWriter := cmd.SetStopWriter(&out)
+	t.Cleanup(restoreWriter)
+
+	originalArgs := os.Args
+	t.Cleanup(func() {
+		os.Args = originalArgs
+	})
+	os.Args = []string{"codeagent", "stop", "--tag", "frontend"}
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "(frontend):") {
+		t.Fatalf("output = %q, want tagged selector in message", out.String())
 	}
 }

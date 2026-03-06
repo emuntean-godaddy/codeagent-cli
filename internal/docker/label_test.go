@@ -155,3 +155,35 @@ func TestContainerByLocalFolderFallback(t *testing.T) {
 		t.Fatalf("ContainerByLocalFolder() = %+v, want running abc123", info)
 	}
 }
+
+func TestContainerByLocalFolderAndConfig(t *testing.T) {
+	t.Parallel()
+
+	folder := "/work/project"
+	configPath := "/work/project/.devcontainer/claude/devcontainer.json"
+	expectedArgs := []string{
+		"ps",
+		"-a",
+		"--filter", "label=devcontainer.config_file=" + configPath,
+		"--filter", "label=devcontainer.local_folder=" + folder,
+		"--format", "{{.ID}}\t{{.State}}",
+	}
+
+	runner := runnerFunc(func(ctx context.Context, name string, args ...string) (docker.Result, error) {
+		if name != "docker" {
+			t.Fatalf("runner name = %q, want %q", name, "docker")
+		}
+		if !reflect.DeepEqual(args, expectedArgs) {
+			t.Fatalf("runner args = %v, want %v", args, expectedArgs)
+		}
+		return docker.Result{Stdout: "abc123\trunning\n"}, nil
+	})
+
+	info, err := docker.ContainerByLocalFolderAndConfig(context.Background(), runner, folder, configPath)
+	if err != nil {
+		t.Fatalf("ContainerByLocalFolderAndConfig() error = %v", err)
+	}
+	if info.ID != "abc123" || info.State != docker.StateRunning {
+		t.Fatalf("ContainerByLocalFolderAndConfig() = %+v, want running abc123", info)
+	}
+}

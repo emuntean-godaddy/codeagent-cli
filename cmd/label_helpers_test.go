@@ -1,11 +1,19 @@
 package cmd_test
 
-import "reflect"
+import (
+	"path/filepath"
+	"reflect"
+)
 
 func labelArgsFor(path string) []string {
+	return labelArgsForConfig(path, filepath.Join(path, ".devcontainer", "devcontainer.json"))
+}
+
+func labelArgsForConfig(path string, configPath string) []string {
 	return []string{
 		"ps",
 		"-a",
+		"--filter", "label=devcontainer.config_file=" + configPath,
 		"--filter", "label=devcontainer.local_folder=" + path,
 		"--format", "{{.ID}}\t{{.State}}",
 	}

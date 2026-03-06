@@ -44,22 +44,29 @@ func SetStopWriter(writer io.Writer) func() {
 }
 
 func newStopCmd() *cobra.Command {
-	return &cobra.Command{
+	var tag string
+	cmd := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop the project devcontainer if running",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStop()
+			return runStop(tag)
 		},
 	}
+	cmd.Flags().StringVarP(&tag, "tag", "t", "", "Tagged devcontainer to use from .devcontainer/<tag>/devcontainer.json")
+	return cmd
 }
 
-func runStop() error {
+func runStop(tag string) error {
 	projectRoot, err := project.CurrentRoot()
 	if err != nil {
 		return writeStopError(errutil.UserErrorf("resolve project root: %v", err))
 	}
+	configPath, selector, err := resolveDevcontainerConfig(projectRoot, tag)
+	if err != nil {
+		return writeStopError(err)
+	}
 
-	info, err := docker.ContainerByLocalFolder(context.Background(), stopRunner, projectRoot)
+	info, err := docker.ContainerByLocalFolderAndConfig(context.Background(), stopRunner, projectRoot, configPath)
 	if err != nil {
 		return writeStopError(errutil.UserErrorf("resolve container state: %v", err))
 	}
@@ -77,11 +84,11 @@ func runStop() error {
 			message := fmt.Sprintf("stop container: %v; stderr: %s", err, strings.TrimSpace(result.Stderr))
 			return writeStopError(errutil.UserError(message))
 		}
-		return writeStopOutput(fmt.Sprintf("Stopped container for %s: %s\n", projectName, containerDisplay))
+		return writeStopOutput(fmt.Sprintf("Stopped container for %s (%s): %s\n", projectName, selector, containerDisplay))
 	case docker.StateStopped:
-		return writeStopOutput(fmt.Sprintf("Container already stopped for %s: %s\n", projectName, containerDisplay))
+		return writeStopOutput(fmt.Sprintf("Container already stopped for %s (%s): %s\n", projectName, selector, containerDisplay))
 	case docker.StateMissing:
-		return writeStopOutput(fmt.Sprintf("Container missing for %s: %s\n", projectName, containerDisplay))
+		return writeStopOutput(fmt.Sprintf("Container missing for %s (%s): %s\n", projectName, selector, containerDisplay))
 	default:
 		return writeStopError(errutil.UserErrorf("unknown container state: %s", info.State))
 	}

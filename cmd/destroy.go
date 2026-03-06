@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/emuntean-godaddy/codeagent-cli/internal/docker"
@@ -43,27 +44,35 @@ func SetDestroyWriter(writer io.Writer) func() {
 }
 
 func newDestroyCmd() *cobra.Command {
-	return &cobra.Command{
+	var tag string
+	cmd := &cobra.Command{
 		Use:   "destroy",
 		Short: "Delete the project devcontainer",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDestroy()
+			return runDestroy(tag)
 		},
 	}
+	cmd.Flags().StringVarP(&tag, "tag", "t", "", "Tagged devcontainer to use from .devcontainer/<tag>/devcontainer.json")
+	return cmd
 }
 
-func runDestroy() error {
+func runDestroy(tag string) error {
 	projectRoot, err := project.CurrentRoot()
 	if err != nil {
 		return writeDestroyError(errutil.UserErrorf("resolve project root: %v", err))
 	}
+	configPath, selector, err := resolveDevcontainerConfig(projectRoot, tag)
+	if err != nil {
+		return writeDestroyError(err)
+	}
+	projectName := filepath.Base(projectRoot)
 
-	info, err := docker.ContainerByLocalFolder(context.Background(), destroyRunner, projectRoot)
+	info, err := docker.ContainerByLocalFolderAndConfig(context.Background(), destroyRunner, projectRoot, configPath)
 	if err != nil {
 		return writeDestroyError(errutil.UserErrorf("resolve container state: %v", err))
 	}
 	if info.State == docker.StateMissing || info.ID == "" {
-		return writeDestroyError(errutil.UserError("container not found for project"))
+		return writeDestroyError(errutil.UserErrorf("container not found for project (%s)", selector))
 	}
 
 	result, err := destroyRunner.Run(context.Background(), "docker", "rm", "-f", info.ID)
@@ -72,6 +81,9 @@ func runDestroy() error {
 		return writeDestroyError(errutil.UserError(message))
 	}
 
+	if _, err := fmt.Fprintf(destroyOut, "Destroyed container for %s (%s): %s\n", projectName, selector, info.ID); err != nil {
+		return writeDestroyError(errutil.UserErrorf("write destroy output: %v", err))
+	}
 	return nil
 }
 
