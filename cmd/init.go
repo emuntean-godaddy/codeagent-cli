@@ -23,12 +23,13 @@ func newInitCmd() *cobra.Command {
 	var envTarget string
 	var tag string
 	var command string
+	var imageName string
 
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize a .devcontainer from templates",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInit(overwrite, configHome, extraEnv, envTarget, tag, command, cmd.Flags().Changed("command"))
+			return runInit(overwrite, configHome, extraEnv, envTarget, tag, command, imageName, cmd.Flags().Changed("command"))
 		},
 	}
 	cmd.Flags().BoolVarP(&overwrite, "overwrite", "o", false, "Overwrite existing .devcontainer")
@@ -37,10 +38,11 @@ func newInitCmd() *cobra.Command {
 	cmd.Flags().StringVar(&envTarget, "env-target", "containerEnv", "devcontainer env target: containerEnv or remoteEnv")
 	cmd.Flags().StringVarP(&tag, "tag", "t", "", "Initialize tagged devcontainer at .devcontainer/<tag>/devcontainer.json")
 	cmd.Flags().StringVarP(&command, "command", "c", "", "Set customizations.codeagent.startCommand in devcontainer.json")
+	cmd.Flags().StringVar(&imageName, "image-name", "", "Set devcontainer image and remove build configuration")
 	return cmd
 }
 
-func runInit(overwrite bool, configHome string, extraEnv []string, envTarget string, tag string, command string, commandSet bool) error {
+func runInit(overwrite bool, configHome string, extraEnv []string, envTarget string, tag string, command string, imageName string, commandSet bool) error {
 	projectRoot, err := project.CurrentRoot()
 	if err != nil {
 		return errutil.UserErrorf("resolve project root: %v", err)
@@ -71,7 +73,11 @@ func runInit(overwrite bool, configHome string, extraEnv []string, envTarget str
 	if err := devcontainer.UpdateName(jsonPath, devcontainerName); err != nil {
 		return errutil.UserErrorf("update devcontainer.json name: %v", err)
 	}
-	if strings.TrimSpace(tag) != "" {
+	if strings.TrimSpace(imageName) != "" {
+		if err := devcontainer.SetImage(jsonPath, imageName); err != nil {
+			return errutil.UserErrorf("update devcontainer.json image: %v", err)
+		}
+	} else if strings.TrimSpace(tag) != "" {
 		if err := devcontainer.UpdateBuildForTaggedConfig(jsonPath); err != nil {
 			return errutil.UserErrorf("update devcontainer.json build: %v", err)
 		}

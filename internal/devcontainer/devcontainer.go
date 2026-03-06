@@ -390,6 +390,43 @@ func UpdateBuildForTaggedConfig(jsonPath string) error {
 	return writeJSON(jsonPath, mode, payload)
 }
 
+func SetImage(jsonPath, imageName string) error {
+	trimmedImage := strings.TrimSpace(imageName)
+	if trimmedImage == "" {
+		return fmt.Errorf("image name must not be empty")
+	}
+
+	payload, mode, err := readJSON(jsonPath)
+	if err != nil {
+		return err
+	}
+
+	payload["image"] = trimmedImage
+	delete(payload, "build")
+	return writeJSON(jsonPath, mode, payload)
+}
+
+func ReadImage(jsonPath string) (string, bool, error) {
+	payload, _, err := readJSON(jsonPath)
+	if err != nil {
+		return "", false, err
+	}
+
+	raw, ok := payload["image"]
+	if !ok {
+		return "", false, nil
+	}
+	image, ok := raw.(string)
+	if !ok {
+		return "", false, fmt.Errorf("parse devcontainer.json: image must be a string")
+	}
+	trimmed := strings.TrimSpace(image)
+	if trimmed == "" {
+		return "", false, nil
+	}
+	return trimmed, true, nil
+}
+
 func writeJSON(path string, mode os.FileMode, payload map[string]any) error {
 	updated, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {

@@ -28,6 +28,7 @@ func newRootCmd() *cobra.Command {
 
 	cmd.AddCommand(newStartCmd())
 	cmd.AddCommand(newInitCmd())
+	cmd.AddCommand(newBuildImageCmd())
 	cmd.AddCommand(newStatusCmd())
 	cmd.AddCommand(newStopCmd())
 	cmd.AddCommand(newDestroyCmd())

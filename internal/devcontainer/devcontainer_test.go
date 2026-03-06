@@ -315,6 +315,56 @@ func TestUpdateBuildForTaggedConfig(t *testing.T) {
 	}
 }
 
+func TestSetImageReplacesBuild(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	jsonPath := filepath.Join(dir, "devcontainer.json")
+	if err := os.WriteFile(jsonPath, []byte(`{"build":{"context":".","dockerfile":"Dockerfile"}}`), 0o640); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if err := devcontainer.SetImage(jsonPath, "ans-search-api:devcontainer-base"); err != nil {
+		t.Fatalf("SetImage() error = %v", err)
+	}
+
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if payload["image"] != "ans-search-api:devcontainer-base" {
+		t.Fatalf("image = %v, want ans-search-api:devcontainer-base", payload["image"])
+	}
+	if _, ok := payload["build"]; ok {
+		t.Fatalf("build exists, want removed")
+	}
+}
+
+func TestReadImage(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	jsonPath := filepath.Join(dir, "devcontainer.json")
+	if err := os.WriteFile(jsonPath, []byte(`{"image":"ans-search-api:devcontainer-base"}`), 0o640); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	got, ok, err := devcontainer.ReadImage(jsonPath)
+	if err != nil {
+		t.Fatalf("ReadImage() error = %v", err)
+	}
+	if !ok {
+		t.Fatalf("ReadImage() ok = false, want true")
+	}
+	if got != "ans-search-api:devcontainer-base" {
+		t.Fatalf("ReadImage() = %q, want %q", got, "ans-search-api:devcontainer-base")
+	}
+}
+
 func TestValidateTag(t *testing.T) {
 	t.Parallel()
 

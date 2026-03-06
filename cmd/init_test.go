@@ -105,6 +105,53 @@ func TestInitCreatesDevcontainer(t *testing.T) {
 	}
 }
 
+func TestInitWithImageNameSetsImageMode(t *testing.T) {
+	projectDir := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := setupConfig(home, "FROM scratch\n", `{"build":{"context":".","dockerfile":"Dockerfile"}}`, 0o640); err != nil {
+		t.Fatalf("setupConfig() error = %v", err)
+	}
+
+	originalArgs := os.Args
+	t.Cleanup(func() {
+		os.Args = originalArgs
+	})
+	os.Args = []string{"codeagent", "init", "--image-name", "ans-search-api:devcontainer-base"}
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	if err := runCommand(); err != nil {
+		t.Fatalf("init error = %v", err)
+	}
+
+	jsonPath := filepath.Join(projectDir, ".devcontainer", config.DevcontainerJSONName)
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if payload["image"] != "ans-search-api:devcontainer-base" {
+		t.Fatalf("image = %v, want ans-search-api:devcontainer-base", payload["image"])
+	}
+	if _, ok := payload["build"]; ok {
+		t.Fatalf("build exists, want removed")
+	}
+}
+
 func TestInitOverwrite(t *testing.T) {
 	projectDir := t.TempDir()
 	home := t.TempDir()
@@ -676,6 +723,59 @@ func TestInitWithTagCreatesTaggedConfigAndSharedDockerfile(t *testing.T) {
 	}
 	if build["dockerfile"] != "../Dockerfile" {
 		t.Fatalf("build.dockerfile = %v, want ../Dockerfile", build["dockerfile"])
+	}
+}
+
+func TestInitWithTagAndImageNameUsesImageMode(t *testing.T) {
+	projectDir := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	devcontainerJSON := `{
+  "build": {
+    "context": ".",
+    "dockerfile": "Dockerfile"
+  }
+}`
+	if err := setupConfig(home, "FROM scratch\n", devcontainerJSON, 0o640); err != nil {
+		t.Fatalf("setupConfig() error = %v", err)
+	}
+
+	originalArgs := os.Args
+	t.Cleanup(func() {
+		os.Args = originalArgs
+	})
+	os.Args = []string{"codeagent", "init", "--tag", "claude", "--image-name", "ans-search-api:devcontainer-base"}
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	if err := runCommand(); err != nil {
+		t.Fatalf("init error = %v", err)
+	}
+
+	jsonPath := filepath.Join(projectDir, ".devcontainer", "claude", config.DevcontainerJSONName)
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if payload["image"] != "ans-search-api:devcontainer-base" {
+		t.Fatalf("image = %v, want ans-search-api:devcontainer-base", payload["image"])
+	}
+	if _, ok := payload["build"]; ok {
+		t.Fatalf("build exists, want removed")
 	}
 }
 

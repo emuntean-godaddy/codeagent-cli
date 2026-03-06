@@ -32,6 +32,7 @@ codeagent init --config-home='${env:HOME}/.gocodex'
 codeagent init -c "codex --yolo"
 codeagent init --tag codex-5.1 -c "codex --yolo -m gpt-5.1-codex"
 codeagent init --tag claude -c "~/.local/bin/claude"
+codeagent init --image-name ans-search-api:devcontainer-base
 codeagent init --config-home '${env:HOME}/.gocodex' -e 'OPENAI_API_KEY=$GOCODE_API_TOKEN' -e 'OPENAI_BASE_URL=$GOCODE_BASE_URL' -t gocode -c "codex -m gpt-5.3-codex"
 codeagent init --config-home '${env:HOME}/.claude' -e ANTHROPIC_MODEL=claude-sonnet-4-6 -e 'ANTHROPIC_AUTH_TOKEN=$GOCODE_API_TOKEN' -e 'ANTHROPIC_BASE_URL=$GOCODE_BASE_URL' -t claude -c "IS_SANDBOX=1 claude --allow-dangerously-skip-permissions"
 codeagent init -e "OPENAI_API_KEY" -e "OPENAI_BASE_URL=$LOCAL_OPENAI_BASE_URL"
@@ -47,6 +48,7 @@ Flags:
 - `--env-target`: write env entries to `containerEnv` (default) or `remoteEnv` (short forms `container` and `remote` are also accepted)
 - `-t, --tag`: initialize a tagged config at `.devcontainer/<tag>/devcontainer.json` (`[a-zA-Z0-9._-]+`)
 - `-c, --command`: set `customizations.codeagent.startCommand` in generated `devcontainer.json` (fails if empty)
+- `--image-name`: set `image` in generated `devcontainer.json` and remove `build` (image mode)
 
 Config-home behavior:
 - `--config-home` path must exist locally.
@@ -71,7 +73,84 @@ Tagged init behavior:
 - For tagged JSON with a `build` section, paths are rewritten to keep Dockerfile resolution correct:
   - `build.context` -> `..`
   - `build.dockerfile` -> `../Dockerfile`
+- If `--image-name` is provided, generated JSON uses `image` mode and removes `build`.
 - `--overwrite` with `--tag` only replaces `.devcontainer/<tag>/` and does not remove other tags.
+
+### build-image
+Build a reusable devcontainer image tag.
+```bash
+codeagent build-image --image-name ans-search-api:devcontainer-base
+codeagent build-image --tag claude --image-name ans-search-api:devcontainer-base
+codeagent build-image --tag claude --image-name ans-search-api:devcontainer-base --set-image
+```
+Behavior:
+- Runs `devcontainer build --workspace-folder <projectRoot> --config <resolved-config> --image-name <name>`.
+- Does not modify `devcontainer.json`; it only builds/tags the image.
+- With `--set-image`, selected `devcontainer.json` is switched to image mode (`image` set, `build` removed) after successful build.
+Flags:
+- `-t, --tag`: use `.devcontainer/<tag>/devcontainer.json`
+- `--image-name`: image name to build (required)
+- `--set-image`: update selected config to use the built image
+
+### user guide (3 tags)
+Example setup for three profiles that share one image:
+- `claude`: Anthropic-based profile
+- `codex`: local codex profile
+- `gocode`: codex profile with gateway env overrides
+
+Use one image tag string consistently across all commands. Example:
+```bash
+export AGENT_IMAGE="harbor.muntean.online/homelab/agent-sandbox:030620260200"
+```
+
+1. Initialize `claude` profile from local Claude config:
+```bash
+codeagent init \
+  --config-home '${env:HOME}/.claude' \
+  -e ANTHROPIC_MODEL=claude-sonnet-4-6 \
+  -e 'ANTHROPIC_AUTH_TOKEN=$GOCODE_API_TOKEN' \
+  -e 'ANTHROPIC_BASE_URL=$GOCODE_BASE_URL' \
+  -t claude \
+  -c "IS_SANDBOX=1 claude --allow-dangerously-skip-permissions"
+```
+
+2. Build the shared image from the `claude` build config:
+```bash
+codeagent build-image --image-name "$AGENT_IMAGE" -t claude
+```
+
+3. Switch `claude` to image mode (so start uses the shared image):
+```bash
+codeagent build-image --image-name "$AGENT_IMAGE" -t claude --set-image
+```
+
+4. Initialize `codex` profile directly in image mode:
+```bash
+codeagent init --config-home '${env:HOME}/.codex' -t codex --image-name "$AGENT_IMAGE"
+```
+
+5. Initialize `gocode` profile directly in image mode:
+```bash
+codeagent init \
+  --config-home '${env:HOME}/.gocodex' \
+  -e 'OPENAI_API_KEY=$GOCODE_API_TOKEN' \
+  -e 'OPENAI_BASE_URL=$GOCODE_BASE_URL' \
+  -t gocode \
+  -c "codex -m gpt-5.3-codex --yolo" \
+  --image-name "$AGENT_IMAGE"
+```
+
+6. Start each profile:
+```bash
+codeagent start -t claude
+codeagent start -t codex
+codeagent start -t gocode
+```
+
+Notes:
+- If you use `agent-sendbox` in one command and `agent-sandbox` in another, Docker treats them as different image names.
+- `build-image` builds from the selected profile config; it does not change config unless `--set-image` is provided.
+- Rebuild later with the same image tag, then re-run `build-image --set-image` only when you want to repin a profile config explicitly.
 
 ### start
 Start or attach to the project devcontainer. Uses `devcontainer up --workspace-folder <projectRoot>` for missing/stopped containers, then attaches via `docker exec`.
