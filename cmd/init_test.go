@@ -85,6 +85,13 @@ func TestInitCreatesDevcontainer(t *testing.T) {
 	if payload["name"] != filepath.Base(projectDir) {
 		t.Fatalf("name = %v, want %v", payload["name"], filepath.Base(projectDir))
 	}
+	runArgs, ok := payload["runArgs"].([]any)
+	if !ok {
+		t.Fatalf("runArgs type = %T, want []any", payload["runArgs"])
+	}
+	if len(runArgs) != 1 || runArgs[0] != "--name="+filepath.Base(projectDir) {
+		t.Fatalf("runArgs = %v, want [--name=%s]", runArgs, filepath.Base(projectDir))
+	}
 	if payload["image"] != "golang:1.22" {
 		t.Fatalf("image = %v, want %v", payload["image"], "golang:1.22")
 	}

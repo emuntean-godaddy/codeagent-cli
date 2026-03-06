@@ -59,6 +59,13 @@ func TestUpdateNameAddsField(t *testing.T) {
 	if payload["name"] != "project-a" {
 		t.Fatalf("name = %v, want %v", payload["name"], "project-a")
 	}
+	runArgs, ok := payload["runArgs"].([]any)
+	if !ok {
+		t.Fatalf("runArgs type = %T, want []any", payload["runArgs"])
+	}
+	if len(runArgs) != 1 || runArgs[0] != "--name=project-a" {
+		t.Fatalf("runArgs = %v, want [--name=project-a]", runArgs)
+	}
 	if payload["image"] != "golang:1.22" {
 		t.Fatalf("image = %v, want %v", payload["image"], "golang:1.22")
 	}
@@ -91,6 +98,60 @@ func TestUpdateNameMissingFile(t *testing.T) {
 
 	if err := devcontainer.UpdateName(filepath.Join(t.TempDir(), "devcontainer.json"), "project-c"); err == nil {
 		t.Fatalf("UpdateName() error = nil, want error")
+	}
+}
+
+func TestUpdateNameUpdatesRunArgsNameEntry(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	jsonPath := filepath.Join(dir, "devcontainer.json")
+	contents := `{"runArgs":["--platform=linux/amd64","--name=old","--privileged"]}`
+	if err := os.WriteFile(jsonPath, []byte(contents), 0o640); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if err := devcontainer.UpdateName(jsonPath, "project-new"); err != nil {
+		t.Fatalf("UpdateName() error = %v", err)
+	}
+
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	runArgs, ok := payload["runArgs"].([]any)
+	if !ok {
+		t.Fatalf("runArgs type = %T, want []any", payload["runArgs"])
+	}
+	want := []any{"--platform=linux/amd64", "--name=project-new", "--privileged"}
+	if len(runArgs) != len(want) {
+		t.Fatalf("len(runArgs) = %d, want %d", len(runArgs), len(want))
+	}
+	for i := range want {
+		if runArgs[i] != want[i] {
+			t.Fatalf("runArgs[%d] = %v, want %v", i, runArgs[i], want[i])
+		}
+	}
+}
+
+func TestUpdateNameInvalidRunArgs(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	jsonPath := filepath.Join(dir, "devcontainer.json")
+	if err := os.WriteFile(jsonPath, []byte(`{"runArgs":"bad"}`), 0o640); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if err := devcontainer.UpdateName(jsonPath, "project-bad"); err == nil {
+		t.Fatalf("UpdateName() error = nil, want error")
+	} else if !strings.Contains(err.Error(), "runArgs must be an array") {
+		t.Fatalf("UpdateName() error = %v, want runArgs array error", err)
 	}
 }
 

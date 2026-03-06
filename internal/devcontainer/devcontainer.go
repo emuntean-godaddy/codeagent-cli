@@ -61,7 +61,47 @@ func UpdateName(jsonPath string, projectName string) error {
 	}
 
 	payload["name"] = projectName
+	if err := upsertNameRunArg(payload, projectName); err != nil {
+		return err
+	}
 	return writeJSON(jsonPath, mode, payload)
+}
+
+func upsertNameRunArg(payload map[string]any, projectName string) error {
+	nameArg := "--name=" + projectName
+
+	runArgsValue, ok := payload["runArgs"]
+	if !ok {
+		payload["runArgs"] = []any{nameArg}
+		return nil
+	}
+
+	runArgs, ok := runArgsValue.([]any)
+	if !ok {
+		return fmt.Errorf("parse devcontainer.json: runArgs must be an array")
+	}
+
+	updated := make([]any, 0, len(runArgs)+1)
+	replaced := false
+	for _, arg := range runArgs {
+		text, ok := arg.(string)
+		if !ok {
+			return fmt.Errorf("parse devcontainer.json: runArgs entries must be strings")
+		}
+		if strings.HasPrefix(text, "--name=") {
+			if !replaced {
+				updated = append(updated, nameArg)
+				replaced = true
+			}
+			continue
+		}
+		updated = append(updated, text)
+	}
+	if !replaced {
+		updated = append([]any{nameArg}, updated...)
+	}
+	payload["runArgs"] = updated
+	return nil
 }
 
 func UpdateCodexHomeMountSources(jsonPath string, codexHome string) error {
